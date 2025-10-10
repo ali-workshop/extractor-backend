@@ -11,6 +11,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.panel import Panel
 from loguru import logger
 import fitz 
+from word_processor import WordProcessor
 # Our parsers
 from pdf_parsers import PDFParsers
 
@@ -26,6 +27,7 @@ class PDFProcessor:
     def __init__(self):
         self.console = Console()
         self.parsers = PDFParsers()
+        self.word_processor = WordProcessor() 
         self.setup_logging()
         
     def setup_logging(self):
@@ -295,3 +297,51 @@ class PDFProcessor:
                     border_style="yellow"
                 )
             )
+
+
+    def save_as_word(self, markdown_content: str, output_dir: str = "outputs", 
+                    language: str = "auto") -> Dict[str, Any]:
+        """
+        Save extracted content as Word document with footnote processing
+        
+        Args:
+            markdown_content: Extracted markdown text
+            output_dir: Output directory for Word file
+            language: Text direction ('auto', 'ltr', 'rtl')
+        
+        Returns:
+            Dictionary with processing results
+        """
+        try:
+            self.console.print(
+                Panel.fit(
+                    "📝 Converting to Word document with footnote processing...",
+                    title="🔤 Word Export",
+                    border_style="blue"
+                )
+            )
+            
+            result = self.word_processor.process_to_word(
+                markdown_content, output_dir, language
+            )
+            
+            if result["success"]:
+                self.console.print(
+                    Panel.fit(
+                        f"✅ Word document created successfully!\n"
+                        f"📁 File: {result['word_file']}\n"
+                        f"📑 Footnotes processed: {result['footnotes_count']}\n"
+                        f"🌐 Language: {result['language'].upper()}",
+                        title="🎉 Word Export Complete",
+                        border_style="green"
+                    )
+                )
+            else:
+                logger.error(f"Word export failed: {result.get('error', 'Unknown error')}")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Word processing error: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}

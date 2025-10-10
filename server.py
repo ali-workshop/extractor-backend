@@ -6,7 +6,7 @@ import tempfile
 from typing import Dict, Any
 import uvicorn
 from pathlib import Path
-
+from word_processor import WordProcessor
 from pdf_processor import PDFProcessor, ProcessingMode
 
 app = FastAPI(
@@ -132,7 +132,75 @@ async def list_files():
         })
     
     return {"files": files}
+@app.post("/export/word")
+async def export_to_word(
+    file: UploadFile = File(...),
+    mode: str = "fast",
+    language: str = "auto"
+):
+    """Process PDF and export directly to Word format"""
+    
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        # Process PDF first
+        processing_mode = ProcessingMode(mode)
+        result = processor.process_pdf(temp_path, processing_mode, auto_detect=True)
+        
+        if not result.get("success"):
+            os.unlink(temp_path)
+            return result
+        
+        # Export to Word
+        word_result = processor.save_as_word(
+            result.get("markdown_content", ""),
+            language=language
+        )
+        
+        # Clean up
+        os.unlink(temp_path)
+        
+        return {
+            **result,
+            "word_export": word_result
+        }
+        
+    except Exception as e:
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        raise HTTPException(status_code=500, detail=f"Word export failed: {str(e)}")
 
+@app.post("/convert/to-word")
+async def convert_to_word(
+    markdown_content: str = Form(...),
+    language: str = Form("auto")
+):
+    """Convert existing markdown content to Word format"""
+    try:
+        result = processor.save_as_word(markdown_content, language=language)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
+
+@app.get("/download/word/{filename}")
+async def download_word_file(filename: str):
+    """Download generated Word files"""
+    file_path = Path("outputs") / filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Word file not found")
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "PDF Processor API"}
